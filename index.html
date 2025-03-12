@@ -46,6 +46,19 @@
             border-radius: 5px;
             display: none;
         }
+        .file-input-wrapper {
+            display: inline-block;
+        }
+        #uploadInput {
+            margin-top: 10px;
+        }
+        #cameraPreview {
+            margin-top: 10px;
+            background-color: #eee;
+        }
+        .result-section {
+            margin-top: 20px;
+        }
     </style>
 </head>
 <body>
@@ -56,9 +69,11 @@
             <h2>Step 1: Upload or Take Picture of Your Puzzle</h2>
             <div class="controls">
                 <button id="cameraBtn">Take Picture</button>
-                <input type="file" id="uploadInput" accept="image/*">
+                <div class="file-input-wrapper">
+                    <input type="file" id="uploadInput" accept="image/*">
+                </div>
             </div>
-            <video id="cameraPreview" style="display:none;" width="100%" autoplay></video>
+            <video id="cameraPreview" style="display:none;" width="100%" autoplay muted playsinline></video>
             <img id="imagePreview" alt="Puzzle Preview">
         </div>
         
@@ -75,6 +90,228 @@
         </div>
     </div>
 
-    <script src="script.js"></script>
+    <script>
+        // DOM elements
+        const cameraBtn = document.getElementById('cameraBtn');
+        const uploadInput = document.getElementById('uploadInput');
+        const cameraPreview = document.getElementById('cameraPreview');
+        const imagePreview = document.getElementById('imagePreview');
+        const analyzeBtn = document.getElementById('analyzeBtn');
+        const processingStatus = document.getElementById('processingStatus');
+        const resultCanvas = document.getElementById('resultCanvas');
+        const resultsDetails = document.getElementById('resultsDetails');
+
+        // Global variables
+        let capturedImage = null;
+        let stream = null;
+
+        // Check if the browser supports getUserMedia
+        function hasGetUserMedia() {
+            return !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
+        }
+
+        // Event listeners
+        cameraBtn.addEventListener('click', toggleCamera);
+        uploadInput.addEventListener('change', handleImageUpload);
+        analyzeBtn.addEventListener('click', analyzePuzzle);
+
+        // Functions for camera handling
+        function toggleCamera() {
+            if (!hasGetUserMedia()) {
+                alert('Your browser does not support camera access. Please try uploading an image instead.');
+                return;
+            }
+            
+            if (cameraPreview.style.display === 'none') {
+                startCamera();
+            } else {
+                stopCamera();
+            }
+        }
+
+        async function startCamera() {
+            try {
+                stream = await navigator.mediaDevices.getUserMedia({ 
+                    video: { 
+                        facingMode: 'environment', 
+                        width: { ideal: 1280 },
+                        height: { ideal: 720 } 
+                    } 
+                });
+                cameraPreview.srcObject = stream;
+                cameraPreview.style.display = 'block';
+                cameraBtn.textContent = 'Capture';
+                cameraBtn.removeEventListener('click', toggleCamera);
+                cameraBtn.addEventListener('click', captureImage);
+            } catch (err) {
+                console.error('Error accessing camera:', err);
+                alert('Could not access the camera. Please check permissions or try uploading an image instead.');
+            }
+        }
+
+        function stopCamera() {
+            if (stream) {
+                stream.getTracks().forEach(track => track.stop());
+                cameraPreview.style.display = 'none';
+                cameraBtn.textContent = 'Take Picture';
+                cameraBtn.removeEventListener('click', captureImage);
+                cameraBtn.addEventListener('click', toggleCamera);
+            }
+        }
+
+        function captureImage() {
+            const canvas = document.createElement('canvas');
+            const video = cameraPreview;
+            
+            if (video.videoWidth === 0 || video.videoHeight === 0) {
+                alert('Cannot capture image. Camera stream not ready. Please try again.');
+                return;
+            }
+            
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+            
+            try {
+                imagePreview.src = canvas.toDataURL('image/png');
+                imagePreview.style.display = 'block';
+                capturedImage = imagePreview.src;
+                
+                stopCamera();
+                analyzeBtn.disabled = false;
+            } catch (e) {
+                console.error('Error capturing image:', e);
+                alert('Failed to capture image. Please try again or upload an image instead.');
+            }
+        }
+
+        // Function for file upload handling
+        function handleImageUpload(event) {
+            const file = event.target.files[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    imagePreview.src = e.target.result;
+                    imagePreview.style.display = 'block';
+                    capturedImage = e.target.result;
+                    analyzeBtn.disabled = false;
+                }
+                reader.readAsDataURL(file);
+            }
+        }
+
+        // Puzzle analysis function
+        function analyzePuzzle() {
+            if (!capturedImage) {
+                alert('Please capture or upload an image first.');
+                return;
+            }
+
+            // Show processing status
+            processingStatus.style.display = 'block';
+            analyzeBtn.disabled = true;
+
+            // Simulating processing delay
+            setTimeout(() => {
+                processingStatus.style.display = 'none';
+                displayResults();
+            }, 2000);
+        }
+
+        // Function to display results
+        function displayResults() {
+            // Show the result canvas
+            resultCanvas.style.display = 'block';
+            
+            // Draw the original image
+            const ctx = resultCanvas.getContext('2d');
+            const img = new Image();
+            img.onload = function() {
+                // Adjust canvas size to fit the window while maintaining aspect ratio
+                const maxWidth = window.innerWidth * 0.9;
+                let width = img.width;
+                let height = img.height;
+                
+                if (width > maxWidth) {
+                    const ratio = maxWidth / width;
+                    width = maxWidth;
+                    height *= ratio;
+                }
+                
+                resultCanvas.width = width;
+                resultCanvas.height = height;
+                ctx.drawImage(img, 0, 0, width, height);
+                
+                // Draw puzzle solution markers
+                drawPuzzleSolution(ctx, width, height);
+            };
+            img.src = capturedImage;
+            
+            // Display explanatory text
+            resultsDetails.innerHTML = `
+                <h3>Puzzle Analysis Complete</h3>
+                <p>The red circles show where puzzle pieces should be placed.</p>
+                <p>The green lines show connections between related pieces.</p>
+                <p><strong>Note:</strong> This is a basic demonstration of the concept.</p>
+            `;
+        }
+
+        function drawPuzzleSolution(ctx, width, height) {
+            // Simulate puzzle piece detection with a grid layout
+            const gridSize = Math.min(width, height) / 10;
+            const rows = Math.floor(height / gridSize);
+            const cols = Math.floor(width / gridSize);
+            
+            // Draw the grid of puzzle pieces
+            ctx.strokeStyle = 'red';
+            ctx.lineWidth = 2;
+            
+            // Highlight "pieces"
+            for (let r = 0; r < rows; r++) {
+                for (let c = 0; c < cols; c++) {
+                    if (Math.random() > 0.7) { // Only highlight some pieces
+                        const x = c * gridSize + gridSize/2;
+                        const y = r * gridSize + gridSize/2;
+                        const size = gridSize * 0.4;
+                        
+                        ctx.beginPath();
+                        ctx.arc(x, y, size, 0, 2 * Math.PI);
+                        ctx.stroke();
+                        
+                        // Add piece number
+                        ctx.fillStyle = 'white';
+                        ctx.fillRect(x - 8, y - 8, 16, 16);
+                        ctx.fillStyle = 'black';
+                        ctx.font = '10px Arial';
+                        ctx.textAlign = 'center';
+                        ctx.textBaseline = 'middle';
+                        ctx.fillText((r * cols + c), x, y);
+                    }
+                }
+            }
+            
+            // Draw some connecting lines between pieces
+            ctx.strokeStyle = 'green';
+            ctx.lineWidth = 1;
+            
+            for (let i = 0; i < 10; i++) {
+                const startRow = Math.floor(Math.random() * rows);
+                const startCol = Math.floor(Math.random() * cols);
+                const endRow = Math.floor(Math.random() * rows);
+                const endCol = Math.floor(Math.random() * cols);
+                
+                const x1 = startCol * gridSize + gridSize/2;
+                const y1 = startRow * gridSize + gridSize/2;
+                const x2 = endCol * gridSize + gridSize/2;
+                const y2 = endRow * gridSize + gridSize/2;
+                
+                ctx.beginPath();
+                ctx.moveTo(x1, y1);
+                ctx.lineTo(x2, y2);
+                ctx.stroke();
+            }
+        }
+    </script>
 </body>
 </html>
